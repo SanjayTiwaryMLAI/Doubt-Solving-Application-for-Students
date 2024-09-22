@@ -1,0 +1,9 @@
+Flask==2.0.1
+Flask-CORS==3.0.10
+PyMuPDF==1.18.14
+boto3==1.18.44
+SpeechRecognition==3.8.1
+pydub==0.25.1
+streamlit==1.8.1
+requests==2.26.0
+audio-recorder-streamlit==0.0.8

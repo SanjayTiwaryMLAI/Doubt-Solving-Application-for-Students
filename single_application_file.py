@@ -37,6 +37,7 @@ class DoubtSolver:
             self.update_context()
             return True
         return False
+    
 
     def previous_page(self):
         if self.current_page > 0:
@@ -154,6 +155,39 @@ class DoubtSolver:
             return "Speech recognition could not understand the audio"
         except sr.RequestError:
             return "Could not request results from the speech recognition service"
+        
+    
+    def process_teaching(doubt_solver):
+        st.write("Processing teaching...")
+        explanation_placeholder = st.empty()
+        full_explanation = ""
+        for token in doubt_solver.explain_concept():
+            full_explanation += token
+            explanation_placeholder.markdown(f"### Explanation:\n{full_explanation}")
+
+        if full_explanation:
+            audio_bytes = doubt_solver.convert_text_to_speech(full_explanation)
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_file:
+                tmp_file.write(audio_bytes)
+                tmp_file_path = tmp_file.name
+            autoplay_audio(tmp_file_path)
+            os.unlink(tmp_file_path)  # Delete the temporary file
+
+    def process_question(doubt_solver, question):
+        st.write("Processing your question...")
+        answer_placeholder = st.empty()
+        full_answer = ""
+        for token in doubt_solver.answer_question(question):
+            full_answer += token
+            answer_placeholder.markdown(f"### Answer:\n{full_answer}")
+
+        if full_answer:
+            audio_bytes = doubt_solver.convert_text_to_speech(full_answer)
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_file:
+                tmp_file.write(audio_bytes)
+                tmp_file_path = tmp_file.name
+            autoplay_audio(tmp_file_path)
+            os.unlink(tmp_file_path)  # Delete the temporary file
 
 
 def transcribe_audio_file(audio_file):
@@ -175,7 +209,7 @@ def transcribe_audio_file(audio_file):
         st.error(f"Error in transcription: {str(e)}")
         return None
     
-# @st.cache_resource
+@st.cache_resource
 def get_doubt_solver(pdf_file):
     return DoubtSolver(pdf_file)
 
@@ -263,7 +297,7 @@ def main():
             question_mode = st.button("Start Question")
             
             if teaching_mode:
-                process_teaching(doubt_solver)
+                doubt_solver.process_teaching()
         
             # Use session state to track the input mode
             if 'input_mode' not in st.session_state:
@@ -278,7 +312,7 @@ def main():
                 question = st.text_input("Enter your question:", "")
                 if st.button("Submit Question"):
                     if question:
-                        process_question(doubt_solver, question)
+                        doubt_solver.process_question(question)
                     else:
                         st.warning("Please enter a question.")
             else:  # Voice mode
@@ -287,44 +321,13 @@ def main():
                     st.write(f"Recognized: {question}")
                     
                     if question and question not in ["Speech recognition could not understand the audio", "Could not request results from the speech recognition service"]:
-                        process_question(doubt_solver, question)
+                        doubt_solver.process_question(question)
                     else:
                         st.warning("Please try speaking your quest whation again.")
 
     else:
         st.info("Please upload a PDF file to begin.")
 
-def process_teaching(doubt_solver):
-    st.write("Processing teaching...")
-    explanation_placeholder = st.empty()
-    full_explanation = ""
-    for token in doubt_solver.explain_concept():
-        full_explanation += token
-        explanation_placeholder.markdown(f"### Explanation:\n{full_explanation}")
-
-    if full_explanation:
-        audio_bytes = doubt_solver.convert_text_to_speech(full_explanation)
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_file:
-            tmp_file.write(audio_bytes)
-            tmp_file_path = tmp_file.name
-        autoplay_audio(tmp_file_path)
-        os.unlink(tmp_file_path)  # Delete the temporary file
-
-def process_question(doubt_solver, question):
-    st.write("Processing your question...")
-    answer_placeholder = st.empty()
-    full_answer = ""
-    for token in doubt_solver.answer_question(question):
-        full_answer += token
-        answer_placeholder.markdown(f"### Answer:\n{full_answer}")
-
-    if full_answer:
-        audio_bytes = doubt_solver.convert_text_to_speech(full_answer)
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_file:
-            tmp_file.write(audio_bytes)
-            tmp_file_path = tmp_file.name
-        autoplay_audio(tmp_file_path)
-        os.unlink(tmp_file_path)  # Delete the temporary file
 
 if __name__ == "__main__":
     main()
