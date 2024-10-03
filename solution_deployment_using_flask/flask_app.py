@@ -1,4 +1,4 @@
-from solution_deployment_using_flask.flask_app import Flask, request, jsonify
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 import fitz  # PyMuPDF library for handling PDFs
 from collections import deque
@@ -20,6 +20,7 @@ class DoubtSolver:
         self.current_page = 0
         self.context_size = context_size
         self.context = deque(maxlen=context_size)
+        self.all_slides_content = self.extract_all_slides_content()
 
         # Initialize AWS Bedrock client
         self.bedrock = boto3.client(
@@ -36,6 +37,13 @@ class DoubtSolver:
     def update_context(self):
         page_content = self.pdf_document[self.current_page].get_text()
         self.context.append((self.current_page, page_content))
+    
+    def extract_all_slides_content(self):
+        all_content = []
+        for page_num in range(len(self.pdf_document)):
+            content = self.pdf_document[page_num].get_text()
+            all_content.append((page_num, content))
+        return all_content
 
     def get_current_page_content(self):
         return self.pdf_document[self.current_page].get_text()
@@ -46,12 +54,27 @@ class DoubtSolver:
         img = pix.tobytes("png")
         return img
 
-    def answer_question(self, question):
-        context = "\n\n".join([f"Page {page+1}:\n{content}" for page, content in self.context])
-        message_content = f"""Context from the PDF:\n\n {context}\n\nQuestion: {question}
-                            \n\n Please answer the question based on the context provided above. If the answer is not fully contained in the context, you may use your general knowledge to provide a more comprehensive answer. 
-                            However, clearly distinguish between information from the context and additional information you're providing. If you're using information beyond the given context, please state so explicitly. Keep your answer within 100 words"""
 
+    def answer_question(self, question):
+        current_context = "\n\n".join([f"Page {page+1}:\n{content}" for page, content in self.context])
+        all_slides = self.all_slides_content
+    
+        message_content = f"""Current context (recent slides):\n\n{current_context}
+    
+        Question: {question}
+    
+        Please answer the question based primarily on the current context provided above. If the answer is not fully contained in the current context, you may refer to the content of all slides to check if the topic will be covered in upcoming slides. 
+    
+        Guidelines for answering:
+        1. If the answer is in the current context, provide it directly.
+        2. If the answer is not in the current context but will be covered in a future slide, mention this fact and provide the future slide number. Do not give details from the future slide.
+        3. If the answer is not in any slide, state that the topic is not covered in the presentation.
+        4. Keep your answer within 150 words.
+    
+        Full content of all slides (for reference only, do not disclose future content details):
+        {json.dumps(all_slides)}
+        """
+    
         request_body = {
             "anthropic_version": "bedrock-2023-05-31",
             "max_tokens": 1000,
@@ -68,24 +91,63 @@ class DoubtSolver:
                 }
             ]
         }
-
+    
         response = self.bedrock.invoke_model(
             modelId='anthropic.claude-3-haiku-20240307-v1:0', 
             body=json.dumps(request_body)
         )
-
+    
         response_body = json.loads(response.get('body').read())
         return response_body['content'][0]['text']
 
+    # def explain_concept(self):
+    #     current_page_content = self.pdf_document[self.current_page].get_text()
+    #     message_content = f"""Context from the PDF:\n\n Page {self.current_page + 1}:\n{current_page_content}\n\n 
+    #     please explain the slide to student, as an teacher very crisp in less than 150 words"""
+
+    #     request_body = {
+    #         "anthropic_version": "bedrock-2023-05-31",
+    #         "max_tokens": 1000,
+    #         "temperature": 0,
+    #         "messages": [
+    #             {
+    #                 "role": "user",
+    #                 "content": [
+    #                     {
+    #                         "type": "text",
+    #                         "text": message_content
+    #                     }
+    #                 ]
+    #             }
+    #         ]
+    #     }
+
+    #     response = self.bedrock.invoke_model(
+    #         modelId='anthropic.claude-3-haiku-20240307-v1:0', 
+    #         body=json.dumps(request_body)
+    #     )
+
+    #     response_body = json.loads(response.get('body').read())
+    #     return response_body['content'][0]['text']
+        
+        
     def explain_concept(self):
         current_page_content = self.pdf_document[self.current_page].get_text()
         message_content = f"""Context from the PDF:\n\n Page {self.current_page + 1}:\n{current_page_content}\n\n 
-        please explain the slide to student, as an teacher very crisp in less than 150 words"""
-
+        As an experienced technical instructor, present this slide's content to your students. Your explanation should:
+    
+        1. Start with a brief introduction (1-2 sentences) to capture attention and set the context.
+        2. Clearly state the main topic or concept (1 sentence).
+        3. Explain 2-3 key points or ideas, using simple language and relatable examples where possible.
+        4. If applicable, mention any important formulas, diagrams, or code snippets (briefly).
+        5. Conclude with a quick summary or takeaway (1-2 sentences).
+    
+        Your explanation should be concise yet informative, aiming for about 150 words and designed to be delivered in approximately 2 minutes. Use an engaging, conversational tone as if speaking directly to your students."""
+    
         request_body = {
             "anthropic_version": "bedrock-2023-05-31",
             "max_tokens": 1000,
-            "temperature": 0,
+            "temperature": 0.2,  # Slightly increased for more natural language
             "messages": [
                 {
                     "role": "user",
@@ -98,14 +160,14 @@ class DoubtSolver:
                 }
             ]
         }
-
+    
         response = self.bedrock.invoke_model(
             modelId='anthropic.claude-3-haiku-20240307-v1:0', 
             body=json.dumps(request_body)
         )
-
+    
         response_body = json.loads(response.get('body').read())
-        return response_body['content'][0]['text']
+        return response_body['content'][0]['text']    
 
     def convert_text_to_speech(self, text):
         response = self.polly.synthesize_speech(
